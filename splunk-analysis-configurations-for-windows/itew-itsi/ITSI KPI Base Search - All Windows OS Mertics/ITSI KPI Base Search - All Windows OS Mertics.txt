@@ -1,0 +1,46 @@
+| mstats min(Processor.%_Idle_Time) as "processor_idle_time"
+    max(Memory.%_Committed_Bytes_In_Use) as "pct_memory_in_use"
+    max(System.Processor_Queue_Length) as "system_processor_queue_length"
+    min(LogicalDisk.Free_Megabytes) as "logicaldisk_free_space"
+    max(PhysicalDisk.%_Disk_Read_Time) as "physicaldisk_read_time"
+    max(PhysicalDisk.%_Disk_Write_Time) as "physicaldisk_write_time"
+    max(Network_Interface.Packets_Received/sec) as "network_packets_received_per_second"
+    max(Network_Interface.Packets_Sent/sec) as "network_packets_sent_per_second"
+    max(Network_Interface.Bytes_Received/sec) as "network_bytes_received_per_second"
+    max(Network_Interface.Bytes_Sent/sec) as "network_bytes_sent_per_second"
+    max(Network_Interface.Packets_Outbound_Errors) as "network_packets_outbound_errors"
+    WHERE index=*_metrics (instance="_Total" AND object="Processor") OR
+        (instance="0" AND object="Memory" OR object="System") OR
+        (instance!="_Total" AND object=LogicalDisk OR object=PhysicalDisk) OR object=Network_Interface
+        [`lookup_shared_base_search_entity_filter_rule({{base_search_GUID}})` | return $value ]
+    by host object instance span=30s
+| eval c_logicaldisk_free_space=if(object="LogicalDisk" AND instance="C:",logicaldisk_free_space,null())
+| eval d_logicaldisk_free_space=if(object="LogicalDisk" AND instance="D:",logicaldisk_free_space,null())
+| eval other_logicaldisk_free_space=if(object="LogicalDisk" AND instance!="C:" AND instance!="D:",logicaldisk_free_space,null())
+| stats sum("processor_idle_time") as "processor_idle_time"
+    sum("c_logicaldisk_free_space") as "c_logicaldisk_free_space"
+    sum("d_logicaldisk_free_space") as "d_logicaldisk_free_space"
+    sum("other_logicaldisk_free_space") as "other_logicaldisk_free_space"
+    sum("pct_memory_in_use") as "pct_memory_in_use"
+    sum("system_processor_queue_length") as "system_processor_queue_length"
+    sum("physicaldisk_read_time") as "physicaldisk_read_time"
+    sum("physicaldisk_write_time") as "physicaldisk_write_time"
+    sum("network_packets_received_per_second") as "network_packets_received_per_second"
+    sum("network_packets_sent_per_second") as "network_packets_sent_per_second"
+    sum("network_bytes_received_per_second") as "network_bytes_received_per_second"
+    sum("network_bytes_sent_per_second") as "network_bytes_sent_per_second"
+    sum("network_packets_outbound_errors") as "network_packets_outbound_errors"
+    by host _time
+| eval "processor_active_time"=100-processor_idle_time
+| eval "physicaldisk_total_time" =
+    if(isnotnull(physicaldisk_read_time),physicaldisk_read_time,0) +
+    if(isnotnull (physicaldisk_write_time),physicaldisk_write_time,0)
+| eval "physicaldisk_total_time" = if(isnotnull(physicaldisk_total_time),physicaldisk_total_time,null())
+| eval "network_packets_total_per_second" =
+    if(isnotnull(network_packets_received_per_second), network_packets_received_per_second,0) +
+    if(isnotnull(network_packets_sent_per_second), network_packets_sent_per_second,0)
+| eval "network_packets_total_per_second" = if(isnotnull(network_packets_total_per_second), network_packets_total_per_second,null())
+| eval "network_mbs_total_per_second" =
+    if(isnotnull(network_bytes_received_per_second), network_bytes_received_per_second,0) +
+    if(isnotnull(network_bytes_sent_per_second), network_bytes_sent_per_second,0)/1000000
+| eval "network_mbs_total_per_second" = if(isnotnull(network_mbs_total_per_second),network_mbs_total_per_second, null())
